@@ -20,11 +20,18 @@ public class DancePlayer {
 
     private final DanceApi api;
     private final Map<String, String> token;
+    private final com.chicluo.dancecube.lib.MusicLibrary library;
     private JsonNode infoCache;
     private List<Score> scoresCache;
+    private Map<Long, String> categoryCache;
 
     public DancePlayer(Map<String, String> token) {
+        this(token, null);
+    }
+
+    public DancePlayer(Map<String, String> token, com.chicluo.dancecube.lib.MusicLibrary library) {
         this.token = token;
+        this.library = library;
         String access = token.get("access_token");
         String uid = token.get("userId");
         if (access == null || access.isBlank()) {
@@ -104,7 +111,7 @@ public class DancePlayer {
                 String name = song.path("Name").asText("");
                 long musicId = song.path("MusicID").asLong(0);
                 int ownerType = song.path("OwnerType").asInt(0);
-                String clsName = GENRE_NAMES.getOrDefault(song.path("MusicCategoryNew").asInt(0), "-");
+                String clsName = categoryOf(musicId);
                 JsonNode list = song.path("ItemRankList");
                 if (list == null || !list.isArray()) {
                     continue;
@@ -151,24 +158,120 @@ public class DancePlayer {
         return out;
     }
 
+    /** 最近游玩（GetLastPlay）转成与 scores() 对齐的 Score，供 R15 图用。 */
+    public List<Score> recentScores() {
+        Map<Long, Integer> ownerMap = new HashMap<>();
+        try {
+            for (Score s : scores()) {
+                ownerMap.put(s.musicId(), s.ownerType());
+            }
+        } catch (RuntimeException ignored) {
+            // 拿不到全量成绩就不标 ownerType
+        }
+        List<Score> out = new ArrayList<>();
+        for (Map<String, Object> r : recent()) {
+            long mid = asLong(r.get("MusicID"));
+            int ownerType = ownerMap.getOrDefault(mid, 0);
+            int lev = (int) asLong(r.get("MusicLev"));
+            int level = (int) asLong(r.get("MusicLevel"));
+            double acc = asLong(r.get("PlayerPercent")) / 100.0;
+            int miss = (int) asLong(r.get("PlayerMiss"));
+            int old = (int) asLong(r.get("MusicLevOld"));
+            String name = r.get("MusicName") == null ? "?" : String.valueOf(r.get("MusicName"));
+            out.add(new Score(
+                    mid, name, ownerType, 0, "-",
+                    lev, levelTypeName(lev, old), old, level, acc,
+                    (int) asLong(r.get("PlayerScore")),
+                    (int) asLong(r.get("ComboCount")),
+                    miss,
+                    r.get("RecordTime"),
+                    com.chicluo.dancecube.analysis.RatingCalculator.computeRating(level, acc),
+                    com.chicluo.dancecube.analysis.RatingCalculator.gradeOf(acc, miss)));
+        }
+        return out;
+    }
+
+    private static long asLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return (long) Double.parseDouble(text.trim());
+            } catch (NumberFormatException ignored) {
+                return 0L;
+            }
+        }
+        return 0L;
+    }
+
     // ------------------------------------------------------------------ 工具
+
+    /** 官谱曲风：用曲库 MusicCategoryNew 反查（GetMyRankNew 不带这个字段）。 */
+    private String categoryOf(long musicId) {
+        if (library == null) {
+            return "-";
+        }
+        if (categoryCache == null) {
+            Map<Long, String> map = new HashMap<>();
+            try {
+                for (com.chicluo.dancecube.model.Song song : library.loadOfficial()) {
+                    if (song.categoryNew() != null) {
+                        map.put(song.musicId(), song.categoryName());
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // 曲库不可用时退化成 -
+            }
+            categoryCache = map;
+        }
+        return categoryCache.getOrDefault(musicId, "-");
+    }
 
     private static int mapCategory(int categoryNew) {
         return categoryNew;
     }
 
-    private static String levelTypeName(int lev, int old) {
-        if (lev >= 100) {
-            return switch (lev) {
+    /** 天梯（全民星）段位与分数：(grade, point)；没有赛季返回 null。 */
+    public int[] ladder() {
+        JsonNode body = api.get("/Dance/api/Match/GetQuanMinSeasons", null).body();
+        if (body == null || !body.isArray() || body.isEmpty()) {
+            return null;
+        }
+        JsonNode pick = null;
+        for (JsonNode s : body) {
+            if (s.path("IsCurrent").asBoolean(false)) {
+                pick = s;
+                break;
+            }
+        }
+        if (pick == null) {
+            for (JsonNode s : body) {
+                if (s.path("IsLast").asBoolean(false)) {
+                    pick = s;
+                    break;
+                }
+            }
+        }
+        if (pick == null) {
+            pick = body.get(body.size() - 1);
+        }
+        return new int[]{pick.path("LevelGrade").asInt(0), pick.path("LevelPoint").asInt(0)};
+    }
+
+    private static String levelTypeName(int levNew, int old) {
+        if (levNew >= 100) {
+            String label = switch (levNew) {
                 case 101 -> "基础";
                 case 102 -> "进阶";
                 case 103 -> "专家";
                 case 104 -> "大师";
                 case 105 -> "传奇";
-                default -> String.valueOf(lev);
+                default -> String.valueOf(levNew);
             };
+            return "[S+]" + label;
         }
-        return switch (lev) {
+        String raw = switch (levNew) {
             case 11 -> "基础";
             case 12 -> "进阶";
             case 13 -> "专家";
@@ -176,6 +279,15 @@ public class DancePlayer {
             case 15 -> "传奇";
             default -> "经典";
         };
+        if (old == 0 || old == 1 || old == 2) {
+            String shortName = switch (old) {
+                case 0 -> "初";
+                case 1 -> "中";
+                default -> "高";
+            };
+            return "[" + shortName + "]" + raw;
+        }
+        return "[秀]" + raw;
     }
 
     private static Map<String, Object> toMap(JsonNode node) {

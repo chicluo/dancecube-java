@@ -1,10 +1,12 @@
 package com.chicluo.dancecube.export;
 
+import com.chicluo.dancecube.lib.DurationStore;
 import com.chicluo.dancecube.model.DanceLevel;
 import com.chicluo.dancecube.model.Score;
 import com.chicluo.dancecube.model.Song;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -72,6 +74,63 @@ class ExportTest {
             assertEquals("自制谱", text(second, 13));
 
             assertNotNull(sheet.getPaneInformation(), "应冻结首行");
+        }
+    }
+
+    @Test
+    void exportsScoresWithDurationAndBitrateColumns() throws IOException {
+        List<Score> scores = List.of(
+                new Score(291, "Calavera", 1, 4, "欧美", 2, "高级", -1, 14, 99.536,
+                        980000, 120, 1, "2026-11-01 12:00:00", 340, "SSS"),
+                new Score(6482, "自制曲", 0, 2, "其他", 1, "中级", -1, 13, 88.0,
+                        800000, 50, 5, "2026-11-02 09:30:00", 200, "+S"),
+                // 没有音频记录的曲目：两列留空
+                new Score(7000, "无声", 0, 2, "其他", 1, "初级", -1, 12, 70.0,
+                        600000, 10, 9, "2026-11-03 08:00:00", 100, "A"));
+
+        DurationStore store = DurationStore.of(
+                java.util.Map.of(291L, 185.6, 6482L, 127.7),
+                java.util.Map.of(291L, 3070717L, 6482L, 2261165L));
+
+        Path path = ScoreExporter.exportScores(scores, OUT_DIR, "10001", store);
+
+        try (XSSFWorkbook wb = open(path)) {
+            Sheet sheet = wb.getSheet("全部成绩");
+            assertNotNull(sheet);
+            assertEquals(ScoreExporter.HEADERS_WITH_AUDIO, readHeader(sheet));
+            assertEquals(16, sheet.getRow(0).getPhysicalNumberOfCells());
+            assertEquals("时长", text(sheet.getRow(0), 14));
+            assertEquals("码率", text(sheet.getRow(0), 15));
+
+            // 185.6 → 186 秒 → 3:06；3070717 * 8 / 185.6 / 1000 ≈ 132.36 → 132
+            Row first = sheet.getRow(1);
+            assertEquals("3:06", text(first, 14));
+            assertEquals(132, number(first, 15), 1e-9);
+            assertEquals(HorizontalAlignment.LEFT, first.getCell(14).getCellStyle().getAlignment());
+            assertEquals(HorizontalAlignment.RIGHT, first.getCell(15).getCellStyle().getAlignment());
+
+            // 127.7 → 128 秒 → 2:08；2261165 * 8 / 127.7 / 1000 ≈ 141.65 → 142
+            Row second = sheet.getRow(2);
+            assertEquals("2:08", text(second, 14));
+            assertEquals(142, number(second, 15), 1e-9);
+
+            Row third = sheet.getRow(3);
+            assertEquals("", text(third, 14));
+            assertEquals("", text(third, 15));
+        }
+    }
+
+    @Test
+    void nullDurationStoreKeepsBaseColumns() throws IOException {
+        List<Score> scores = List.of(
+                new Score(291, "Calavera", 1, 4, "欧美", 2, "高级", -1, 14, 99.536,
+                        980000, 120, 1, "2026-11-01 12:00:00", 340, "SSS"));
+
+        Path path = ScoreExporter.exportScores(scores, OUT_DIR, "10002", null);
+
+        try (XSSFWorkbook wb = open(path)) {
+            Sheet sheet = wb.getSheet("全部成绩");
+            assertEquals(ScoreExporter.HEADERS, readHeader(sheet));
         }
     }
 

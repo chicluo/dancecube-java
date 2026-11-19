@@ -5,6 +5,7 @@ import com.chicluo.dancecube.analysis.RatioResult;
 import com.chicluo.dancecube.client.DancePlayer;
 import com.chicluo.dancecube.export.CatalogExporter;
 import com.chicluo.dancecube.export.ScoreExporter;
+import com.chicluo.dancecube.lib.DurationStore;
 import com.chicluo.dancecube.lib.MusicLibrary;
 import com.chicluo.dancecube.lib.SongFormatter;
 import com.chicluo.dancecube.lib.TokenStore;
@@ -28,11 +29,14 @@ public class DanceCube {
     private final MusicLibrary library;
     private final TokenStore tokens;
     private final com.chicluo.dancecube.lib.PushStore push;
+    private final DurationStore durations;
 
     public DanceCube(Path dataDir) {
         this.library = new MusicLibrary(dataDir);
         this.tokens = new TokenStore(dataDir);
         this.push = new com.chicluo.dancecube.lib.PushStore(dataDir.resolve("push_targets.json"));
+        // 音频时长/码率由 AstrBot 插件维护，文件缺失时自动退化为空表
+        this.durations = DurationStore.load(dataDir);
     }
 
     public MusicLibrary library() {
@@ -41,6 +45,11 @@ public class DanceCube {
 
     public TokenStore tokens() {
         return tokens;
+    }
+
+    /** 音频时长/码率数据（读自数据目录下的 music_duration*.json / music_bitrate.json）。 */
+    public DurationStore durationStore() {
+        return durations;
     }
 
     public com.chicluo.dancecube.lib.PushStore pushStore() {
@@ -67,7 +76,7 @@ public class DanceCube {
         if (token == null) {
             return null;
         }
-        return new DancePlayer(token);
+        return new DancePlayer(token, library);
     }
 
     public PlayerSnapshot snapshot(String uid) {
@@ -95,14 +104,27 @@ public class DanceCube {
 
     // ------------------------------------------------------------------ 导出
 
+    /** 导出全部成绩（基础 14 列 + 时长 / 码率）。 */
     public Path exportScores(String uid, Path outDir) throws IOException {
-        return ScoreExporter.exportScores(player(uid).scores(), outDir);
+        return exportScores(uid, outDir, durations);
+    }
+
+    /** 导出全部成绩，可传入自定义的音频信息；{@code null} 表示不补时长/码率两列。 */
+    public Path exportScores(String uid, Path outDir, DurationStore durationStore) throws IOException {
+        var player = player(uid);
+        String roleId = player.info().path("UserID").asText("");
+        if (roleId.isBlank()) {
+            roleId = uid;
+        }
+        return ScoreExporter.exportScores(player.scores(), outDir, roleId, durationStore);
     }
 
     public Path exportCatalog(String kind, Path outDir) throws IOException {
+        java.nio.file.Files.createDirectories(outDir);
         if ("official".equals(kind)) {
-            return CatalogExporter.buildOfficial(library.loadOfficial(), outDir);
+            return CatalogExporter.buildOfficial(
+                    library.loadOfficial(), outDir.resolve("官谱全表.xlsx"));
         }
-        return CatalogExporter.buildUser(library.loadUser(), outDir);
+        return CatalogExporter.buildUser(library.loadUser(), outDir.resolve("自制谱全表.xlsx"));
     }
 }

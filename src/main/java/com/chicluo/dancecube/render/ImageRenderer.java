@@ -479,7 +479,12 @@ public final class ImageRenderer {
         if (userName.isEmpty()) {
             userName = "舞立方 " + fmtInt(m.get("UserID"));
         }
-        drawAvatarFallback(g, px, py, avSize, userName);
+        BufferedImage avatar = AvatarLoader.load(str(m.get("HeadimgURL")), avSize);
+        if (avatar != null) {
+            g.drawImage(avatar, px, py, null);
+        } else {
+            drawAvatarFallback(g, px, py, avSize, userName);
+        }
 
         int tx = px + avSize + 22;
         text(g, tx, 50, userName, font(F_BOLD, 42), C_TEXT, "la");
