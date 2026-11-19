@@ -27,10 +27,12 @@ public class DanceCube {
 
     private final MusicLibrary library;
     private final TokenStore tokens;
+    private final com.chicluo.dancecube.lib.PushStore push;
 
     public DanceCube(Path dataDir) {
         this.library = new MusicLibrary(dataDir);
         this.tokens = new TokenStore(dataDir);
+        this.push = new com.chicluo.dancecube.lib.PushStore(dataDir.resolve("push_targets.json"));
     }
 
     public MusicLibrary library() {
@@ -39,6 +41,10 @@ public class DanceCube {
 
     public TokenStore tokens() {
         return tokens;
+    }
+
+    public com.chicluo.dancecube.lib.PushStore pushStore() {
+        return push;
     }
 
     // ------------------------------------------------------------------ 曲库
