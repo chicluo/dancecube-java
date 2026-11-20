@@ -2,6 +2,7 @@ package com.chicluo.dancecube;
 
 import com.chicluo.dancecube.analysis.RatioAnalyzer;
 import com.chicluo.dancecube.analysis.RatioResult;
+import com.chicluo.dancecube.client.DanceApi;
 import com.chicluo.dancecube.client.DancePlayer;
 import com.chicluo.dancecube.export.CatalogExporter;
 import com.chicluo.dancecube.export.ScoreExporter;
@@ -63,9 +64,54 @@ public class DanceCube {
         return library.search(keyword, limit);
     }
 
-    /** 曲目详情文本；duration/kbps 未知传 null。 */
+    /** 按 MusicID 精确查找（含官谱与自制谱）；没有返回 null。 */
+    public Song findById(long musicId) {
+        return library.findById(musicId);
+    }
+
+    /** 曲目详情文本；时长/码率先查缓存，自制谱再按需探测（下载音频读一次）并写回。 */
     public String formatSong(Song song, Integer durationSeconds, Integer kbps) {
-        return SongFormatter.format(song, durationSeconds, kbps);
+        Integer dur = durationSeconds != null ? durationSeconds : durations.duration(song.musicId());
+        Integer rate = kbps != null ? kbps : durations.kbps(song.musicId());
+        if (dur == null && "user".equals(song.source())) {
+            dur = durations.probeAndCache(song.musicId(), resolveAudioUrl(song));
+        }
+        return SongFormatter.format(song, dur, rate);
+    }
+
+    /**
+     * 拿自制谱音频地址：有 audioUrl 直接用；没有就调 GetGoodsInfo 找 ListFile 里
+     * FileType=2 的 Url（对齐 Python {@code music.py::probe_duration} 的兜底路径）。
+     */
+    private String resolveAudioUrl(Song song) {
+        if (song.audioUrl() != null && !song.audioUrl().isBlank()) {
+            return song.audioUrl();
+        }
+        for (Map.Entry<String, Map<String, String>> entry : tokens.all().entrySet()) {
+            String access = entry.getValue().get("access_token");
+            if (access == null || access.isBlank()) {
+                continue;
+            }
+            try {
+                DanceApi api = new DanceApi(access, entry.getKey());
+                DanceApi.ApiResult result = api.get("/Dance/api/MusicData/GetGoodsInfo",
+                        Map.of("musicId", String.valueOf(song.musicId())));
+                if (result.ok()) {
+                    for (com.fasterxml.jackson.databind.JsonNode item : result.body().path("ListFile")) {
+                        if (item.path("FileType").asInt(0) == 2) {
+                            String url = item.path("Url").asText("");
+                            if (!url.isBlank()) {
+                                return url;
+                            }
+                        }
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // 该 token 不可用时换下一个
+            }
+            break;
+        }
+        return null;
     }
 
     // ------------------------------------------------------------------ 玩家
@@ -121,10 +167,11 @@ public class DanceCube {
 
     public Path exportCatalog(String kind, Path outDir) throws IOException {
         java.nio.file.Files.createDirectories(outDir);
+        com.chicluo.dancecube.lib.DurationStore durations = durationStore();
         if ("official".equals(kind)) {
             return CatalogExporter.buildOfficial(
-                    library.loadOfficial(), outDir.resolve("官谱全表.xlsx"));
+                    library.loadOfficial(), outDir.resolve("官谱全表.xlsx"), durations);
         }
-        return CatalogExporter.buildUser(library.loadUser(), outDir.resolve("自制谱全表.xlsx"));
+        return CatalogExporter.buildUser(library.loadUser(), outDir.resolve("自制谱全表.xlsx"), durations);
     }
 }

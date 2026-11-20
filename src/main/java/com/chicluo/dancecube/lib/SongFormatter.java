@@ -44,6 +44,8 @@ public final class SongFormatter {
             }
         } else if (song.isOfficial() && HIDDEN_SONG_IDS.contains(song.musicId())) {
             sb.append("\n  时长：商店隐藏歌曲，无法拉取");
+        } else {
+            sb.append("\n  时长：<无法获取>");
         }
 
         if ((song.ownerId() != null) || (song.ownerName() != null && !song.ownerName().isEmpty())) {

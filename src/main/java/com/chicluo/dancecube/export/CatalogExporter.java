@@ -28,13 +28,13 @@ import java.util.Set;
  */
 public final class CatalogExporter {
 
-    /** 官谱全表表头。 */
+    /** 官谱全表表头（顺序与 Python 版一致，含「时长」）。 */
     public static final List<String> OFFICIAL_HEADERS = List.of(
-            "音乐ID", "曲名", "曲风", "难度", "定数", "物量");
+            "音乐ID", "曲名", "曲风", "时长", "难度", "定数", "物量");
 
-    /** 自制谱全表表头，顺序与 Python 版一致（去掉「时长」后不再有该列）。 */
+    /** 自制谱全表表头，顺序与 Python 版一致（含「时长」）。 */
     public static final List<String> USER_HEADERS = List.of(
-            "音乐ID", "曲名", "作者ID", "作者", "标签", "价格(金币)", "点赞", "异常",
+            "音乐ID", "曲名", "时长", "作者ID", "作者", "标签", "价格(金币)", "点赞", "异常",
             "难度1", "定数1", "物量1", "难度2", "定数2", "物量2", "难度3", "定数3", "物量3",
             "show+难度", "show+定数");
 
@@ -63,7 +63,7 @@ public final class CatalogExporter {
      *
      * @return 生成的 xlsx 路径
      */
-    public static Path buildOfficial(List<Song> songs, Path path) {
+    public static Path buildOfficial(List<Song> songs, Path path, com.chicluo.dancecube.lib.DurationStore durations) {
         List<OfficialRow> rows = new ArrayList<>();
         if (songs != null) {
             for (Song song : songs) {
@@ -105,8 +105,10 @@ public final class CatalogExporter {
             int rowIndex = 1;
             for (OfficialRow row : rows) {
                 Row sheetRow = sheet.createRow(rowIndex++);
+                Integer dur = durations == null ? null : durations.duration(row.musicId());
                 Object[] values = {
                         row.musicId(), row.name(), row.genre(),
+                        dur == null || dur <= 0 ? "" : ScoreExporter.mmss(dur),
                         row.label(), row.level(), row.combo(),
                 };
                 for (int col = 0; col < values.length; col++) {
@@ -128,7 +130,7 @@ public final class CatalogExporter {
      *
      * @return 生成的 xlsx 路径
      */
-    public static Path buildUser(List<Song> songs, Path path) {
+    public static Path buildUser(List<Song> songs, Path path, com.chicluo.dancecube.lib.DurationStore durations) {
         List<Song> items = new ArrayList<>(songs == null ? List.of() : songs);
         items.sort(Comparator.comparingLong((Song s) -> s.like() == null ? 0L : s.like()).reversed()
                 .thenComparingLong(Song::musicId));
@@ -146,6 +148,8 @@ public final class CatalogExporter {
                 List<Object> values = new ArrayList<>(USER_HEADERS.size());
                 values.add(song.musicId());
                 values.add(ExcelSupport.safeCell(song.name() == null ? "" : song.name()));
+                Integer dur = durations == null ? null : durations.duration(song.musicId());
+                values.add(dur == null || dur <= 0 ? "" : ScoreExporter.mmss(dur));
                 values.add(song.ownerId() == null || song.ownerId() == 0L ? "" : song.ownerId());
                 values.add(ExcelSupport.safeCell(song.ownerName() == null ? "" : song.ownerName()));
                 values.add(ExcelSupport.safeCell(String.join(" / ",

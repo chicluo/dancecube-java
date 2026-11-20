@@ -29,14 +29,17 @@ public final class DurationStore {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final System.Logger LOG = System.getLogger(DurationStore.class.getName());
 
-    private static final DurationStore EMPTY = new DurationStore(Map.of(), Map.of());
+    private static final DurationStore EMPTY = new DurationStore(Map.of(), Map.of(), null);
 
     private final Map<Long, Double> durations;
     private final Map<Long, Long> sizes;
+    private final Path dataDir;
+    private static final Object WRITE_LOCK = new Object();
 
-    private DurationStore(Map<Long, Double> durations, Map<Long, Long> sizes) {
-        this.durations = Map.copyOf(durations);
+    private DurationStore(Map<Long, Double> durations, Map<Long, Long> sizes, Path dataDir) {
+        this.durations = new HashMap<>(durations);
         this.sizes = Map.copyOf(sizes);
+        this.dataDir = dataDir;
     }
 
     /** 空存储：所有查询都返回 null。 */
@@ -63,13 +66,59 @@ public final class DurationStore {
         if (durations.isEmpty() && sizes.isEmpty()) {
             return EMPTY;
         }
-        return new DurationStore(durations, sizes);
+        return new DurationStore(durations, sizes, dataDir);
     }
 
     /** 用现成映射构造，主要给测试与调用方自定义数据源用。 */
     public static DurationStore of(Map<Long, Double> durations, Map<Long, Long> sizes) {
         return new DurationStore(durations == null ? Map.of() : durations,
-                sizes == null ? Map.of() : sizes);
+                sizes == null ? Map.of() : sizes, null);
+    }
+
+    /**
+     * 缺时长时按需探测（下载音频读一次）并写回 {@code music_duration_user.json}。
+     * 已知或探测失败都返回 null，不抛异常；写盘失败也不影响返回值。
+     */
+    public synchronized Integer probeAndCache(long musicId, String audioUrl) {
+        Integer known = duration(musicId);
+        if (known != null) {
+            return known;
+        }
+        Double seconds = AudioProbe.probe(audioUrl);
+        if (seconds == null || seconds <= 0) {
+            return null;
+        }
+        durations.put(musicId, seconds);
+        writeUserDuration(musicId, seconds);
+        return (int) Math.max(1, Math.rint(seconds));
+    }
+
+    /** 把新探测到的时长合并进 music_duration_user.json（读-改-写，加锁 + 临时文件替换）。 */
+    private void writeUserDuration(long musicId, double seconds) {
+        if (dataDir == null) {
+            return;
+        }
+        Path file = resolve(dataDir, "music_duration_user.json");
+        if (file == null) {
+            file = dataDir.resolve("music_duration_user.json");
+        }
+        synchronized (WRITE_LOCK) {
+            try {
+                com.fasterxml.jackson.databind.node.ObjectNode root = MAPPER.createObjectNode();
+                if (Files.isRegularFile(file)) {
+                    JsonNode existing = MAPPER.readTree(file.toFile());
+                    if (existing != null && existing.isObject()) {
+                        root = (com.fasterxml.jackson.databind.node.ObjectNode) existing;
+                    }
+                }
+                root.put(String.valueOf(musicId), seconds);
+                Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                MAPPER.writerWithDefaultPrettyPrinter().writeValue(tmp.toFile(), root);
+                Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                LOG.log(System.Logger.Level.WARNING, "写回时长缓存失败：" + e);
+            }
+        }
     }
 
     /** 音频时长的整秒数（四舍五入，对齐 Python {@code catalog.mmss}）；未知返回 null。 */
