@@ -540,19 +540,62 @@ public final class ImageRenderer {
     public static int drawStats(Graphics2D g, int y, List<Stat> stats) {
         int sh = 84;
         int cw = (W - 2 * M - 4 * 12) / 5;
-        Font labelFont = font(F_LIGHT, 17);
-        Font valueFont = font(F_BOLD, 27);
         for (int i = 0; i < stats.size(); i++) {
             Stat st = stats.get(i);
             int x0 = M + i * (cw + 12);
             rounded(g, x0, y, x0 + cw, y + sh, 14, new Color(255, 255, 255, 14));
-            text(g, x0 + 14, y + 12, st.label(), labelFont, C_DIM, "la");
-            text(g, x0 + 14, y + 36, st.value(), valueFont, C_TEXT, "la");
+            Fitted label = fit(g, st.label(), F_LIGHT, 17, cw - 28, 12);
+            text(g, x0 + 14, y + 12, label.lines().get(0), label.font(), C_DIM, "la");
+            Fitted value = fit(g, st.value(), F_BOLD, 27, cw - 28, 15);
+            int vy = y + 36;
+            int shown = Math.min(2, value.lines().size());
+            for (int k = 0; k < shown; k++) {
+                text(g, x0 + 14, vy, value.lines().get(k), value.font(), C_TEXT, "la");
+                vy += (int) (value.font().getSize() * 1.15);
+            }
         }
         return y + sh;
     }
 
     // ------------------------------------------------------------------ 歌曲表格
+
+    /** 统计块文字排版：先缩字号，缩到 minSize 还超宽就按宽度拆行。 */
+    private record Fitted(Font font, java.util.List<String> lines) {
+    }
+
+    private static Fitted fit(Graphics2D g, String text, java.nio.file.Path baseFont, int baseSize,
+                              int maxWidth, int minSize) {
+        String s = text == null ? "" : text;
+        if (s.isEmpty()) {
+            return new Fitted(font(baseFont, baseSize), java.util.List.of(""));
+        }
+        for (int size = baseSize; size >= minSize; size--) {
+            Font f = font(baseFont, size);
+            if (g.getFontMetrics(f).stringWidth(s) <= maxWidth) {
+                return new Fitted(f, java.util.List.of(s));
+            }
+        }
+        Font f = font(baseFont, minSize);
+        java.awt.FontMetrics fm = g.getFontMetrics(f);
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (fm.stringWidth(cur.toString() + ch) <= maxWidth) {
+                cur.append(ch);
+            } else {
+                if (cur.length() > 0) {
+                    lines.add(cur.toString());
+                }
+                cur.setLength(0);
+                cur.append(ch);
+            }
+        }
+        if (cur.length() > 0) {
+            lines.add(cur.toString());
+        }
+        return new Fitted(f, lines);
+    }
 
     private static Font[] fontsFor(int rowH) {
         if (rowH >= 46) {

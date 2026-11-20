@@ -96,3 +96,8 @@ MIT —— 与 Python 插件的 PolyForm Noncommercial 不同：这是可复用�
 ## 对接
 
 见 [docs/INTEGRATION.md](docs/INTEGRATION.md)：怎么把本库接进任意 bot 框架，含最小示例。
+## 关于这份 Java 版
+
+> 坦白说：这套库是 DeepSeek 模型从 Python 版转写过来的。功能能对拍（数值、像素都验证过），但它在 Java 的「边角」上翻车明显更多——Spring 生命周期、Reactor 的异常传播、AWT 字体渲染、Windows 的 GBK 编码，都踩过坑、修过一轮。
+>
+> Python 版有几个月真实使用的打磨，Java 版只有两天的集中转写。质量差距主要在「磨了多少遍」，不在「能不能写」——有问题欢迎提 issue，一起补。

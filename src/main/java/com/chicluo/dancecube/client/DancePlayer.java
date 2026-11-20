@@ -210,7 +210,7 @@ public class DancePlayer {
     /** 官谱曲风：用曲库 MusicCategoryNew 反查（GetMyRankNew 不带这个字段）。 */
     private String categoryOf(long musicId) {
         if (library == null) {
-            return "-";
+            return "";
         }
         if (categoryCache == null) {
             Map<Long, String> map = new HashMap<>();
@@ -221,11 +221,11 @@ public class DancePlayer {
                     }
                 }
             } catch (RuntimeException ignored) {
-                // 曲库不可用时退化成 -
+                // 曲库不可用时留空（不能返回 "-"，Excel 会把 - 开头当公式、加 ' 前缀显示成 '-）
             }
             categoryCache = map;
         }
-        return categoryCache.getOrDefault(musicId, "-");
+        return categoryCache.getOrDefault(musicId, "");
     }
 
     private static int mapCategory(int categoryNew) {
