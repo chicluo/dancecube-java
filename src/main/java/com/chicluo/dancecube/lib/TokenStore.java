@@ -7,7 +7,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.AclEntryPermission;
+import java.nio.file.attribute.AclEntryType;
+import java.nio.file.attribute.AclFileAttributeView;
+import java.nio.file.attribute.UserPrincipal;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -44,11 +50,41 @@ public class TokenStore {
     public void save(String uid, Map<String, String> token) {
         try {
             Files.createDirectories(dir);
+            harden(dir);
             Path tmp = dir.resolve(uid + ".json.tmp");
             MAPPER.writeValue(tmp.toFile(), token);
             Files.move(tmp, fileOf(uid), StandardCopyOption.REPLACE_EXISTING);
+            harden(fileOf(uid));
         } catch (IOException e) {
             throw new IllegalStateException("保存 token 失败：" + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 把 tokens 目录/文件收紧到当前用户专属，对标 Python 的 0700/0600。
+     * Windows 上 os.chmod 不生效，必须走 NTFS ACL；非 Windows 或没权限时静默跳过。
+     */
+    private static void harden(Path path) {
+        try {
+            AclFileAttributeView view = Files.getFileAttributeView(path, AclFileAttributeView.class);
+            if (view == null) {
+                return;
+            }
+            UserPrincipal owner = view.getOwner();
+            AclEntry entry = AclEntry.newBuilder()
+                    .setType(AclEntryType.ALLOW)
+                    .setPrincipal(owner)
+                    .setPermissions(AclEntryPermission.READ_DATA, AclEntryPermission.WRITE_DATA,
+                            AclEntryPermission.APPEND_DATA, AclEntryPermission.READ_ATTRIBUTES,
+                            AclEntryPermission.WRITE_ATTRIBUTES, AclEntryPermission.READ_ACL,
+                            AclEntryPermission.WRITE_ACL, AclEntryPermission.DELETE,
+                            AclEntryPermission.READ_NAMED_ATTRS, AclEntryPermission.WRITE_NAMED_ATTRS,
+                            AclEntryPermission.EXECUTE, AclEntryPermission.DELETE_CHILD,
+                            AclEntryPermission.SYNCHRONIZE)
+                    .build();
+            view.setAcl(List.of(entry));
+        } catch (Exception ignored) {
+            // 收紧失败不影响主流程
         }
     }
 

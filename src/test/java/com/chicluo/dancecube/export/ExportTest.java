@@ -156,7 +156,7 @@ class ExportTest {
                 new Song("official", "空曲", 300, List.of(), null, null, null, "", List.of(), 1, "", ""));
 
         Path path = OUT_DIR.resolve("official.xlsx");
-        Path returned = CatalogExporter.buildOfficial(songs, path);
+        Path returned = CatalogExporter.buildOfficial(songs, path, null);
 
         assertEquals(path, returned);
         assertTrue(Files.isRegularFile(path));
@@ -166,15 +166,16 @@ class ExportTest {
             assertEquals(CatalogExporter.OFFICIAL_HEADERS, readHeader(sheet));
             assertEquals(4, sheet.getLastRowNum(), "3 个谱面 + 1 条未填");
 
-            assertEquals("[S+]传奇(17)", text(sheet.getRow(1), 3));
-            assertEquals("[高]传奇(14)", text(sheet.getRow(2), 3));
-            assertEquals("⚠️ [中]专家(13)", text(sheet.getRow(3), 3));
+            // 列序：音乐ID 0 / 曲名 1 / 曲风 2 / 时长 3 / 难度 4 / 定数 5 / 物量 6
+            assertEquals("[S+]传奇(17)", text(sheet.getRow(1), 4));
+            assertEquals("[高]传奇(14)", text(sheet.getRow(2), 4));
+            assertEquals("⚠️ [中]专家(13)", text(sheet.getRow(3), 4));
             assertEquals(291, number(sheet.getRow(1), 0), 1e-9);
             assertEquals("Calavera", text(sheet.getRow(1), 1));
             assertEquals("欧美", text(sheet.getRow(1), 2));
-            assertEquals(17, number(sheet.getRow(1), 4), 1e-9);
-            assertEquals(1500, number(sheet.getRow(1), 5), 1e-9);
-            assertEquals("未填", text(sheet.getRow(4), 3));
+            assertEquals(17, number(sheet.getRow(1), 5), 1e-9);
+            assertEquals(1500, number(sheet.getRow(1), 6), 1e-9);
+            assertEquals("未填", text(sheet.getRow(4), 4));
             assertEquals("国语", text(sheet.getRow(4), 2));
         }
     }
@@ -194,30 +195,33 @@ class ExportTest {
 
         List<Song> songs = new ArrayList<>(List.of(empty, song)); // 故意打乱，验证按点赞倒序
         Path path = OUT_DIR.resolve("user.xlsx");
-        CatalogExporter.buildUser(songs, path);
+        CatalogExporter.buildUser(songs, path, null);
 
         assertTrue(Files.isRegularFile(path));
         try (XSSFWorkbook wb = open(path)) {
             Sheet sheet = wb.getSheet("自制谱商店");
             assertNotNull(sheet);
             assertEquals(CatalogExporter.USER_HEADERS, readHeader(sheet));
-            assertEquals(19, sheet.getRow(0).getPhysicalNumberOfCells());
+            assertEquals(20, sheet.getRow(0).getPhysicalNumberOfCells());
             assertEquals(2, sheet.getLastRowNum());
 
+            // 列序：音乐ID 0 / 曲名 1 / 时长 2 / 作者ID 3 / 作者 4 / 标签 5 / 价格 6 / 点赞 7 / 异常 8
+            //       难度1 9 / 定数1 10 / 物量1 11 / 难度2 12 / 定数2 13 / 物量2 14
+            //       难度3 15 / 定数3 16 / 物量3 17 / show+难度 18 / show+定数 19
             Row row = sheet.getRow(1);
             assertEquals(6482, number(row, 0), 1e-9);
             assertEquals("自制曲", text(row, 1));
-            assertEquals(7, number(row, 2), 1e-9);
-            assertEquals("作者", text(row, 3));
-            assertEquals("流行 / 电音", text(row, 4));
-            assertEquals(100, number(row, 5), 1e-9);
-            assertEquals(42, number(row, 6), 1e-9);
-            assertEquals("⚠️", text(row, 7));
-            assertEquals("[初]基础(10)", text(row, 8));
-            assertEquals("[中]进阶(11)", text(row, 11));
-            assertEquals("[高]专家(12)", text(row, 14));
-            assertEquals("[S+]传奇(15)", text(row, 17));
-            assertEquals(15, number(row, 18), 1e-9);
+            assertEquals(7, number(row, 3), 1e-9);
+            assertEquals("作者", text(row, 4));
+            assertEquals("流行 / 电音", text(row, 5));
+            assertEquals(100, number(row, 6), 1e-9);
+            assertEquals(42, number(row, 7), 1e-9);
+            assertEquals("⚠️", text(row, 8));
+            assertEquals("[初]基础(10)", text(row, 9));
+            assertEquals("[中]进阶(11)", text(row, 12));
+            assertEquals("[高]专家(12)", text(row, 15));
+            assertEquals("[S+]传奇(15)", text(row, 18));
+            assertEquals(15, number(row, 19), 1e-9);
 
             // 空商品：价格/点赞/标签订位都是空文本，三组难度补齐为空
             Row emptyRow = sheet.getRow(2);
