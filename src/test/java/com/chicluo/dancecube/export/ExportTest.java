@@ -195,43 +195,51 @@ class ExportTest {
 
         List<Song> songs = new ArrayList<>(List.of(empty, song)); // 故意打乱，验证按点赞倒序
         Path path = OUT_DIR.resolve("user.xlsx");
-        CatalogExporter.buildUser(songs, path, null);
+        // 6482：127.7s / 2261165B → 时长 2:08、码率 142；空商品没有音频记录，两列留空
+        DurationStore store = DurationStore.of(
+                java.util.Map.of(6482L, 127.7),
+                java.util.Map.of(6482L, 2261165L));
+        CatalogExporter.buildUser(songs, path, store);
 
         assertTrue(Files.isRegularFile(path));
         try (XSSFWorkbook wb = open(path)) {
             Sheet sheet = wb.getSheet("自制谱商店");
             assertNotNull(sheet);
             assertEquals(CatalogExporter.USER_HEADERS, readHeader(sheet));
-            assertEquals(20, sheet.getRow(0).getPhysicalNumberOfCells());
+            assertEquals(21, sheet.getRow(0).getPhysicalNumberOfCells());
             assertEquals(2, sheet.getLastRowNum());
 
-            // 列序：音乐ID 0 / 曲名 1 / 时长 2 / 作者ID 3 / 作者 4 / 标签 5 / 价格 6 / 点赞 7 / 异常 8
-            //       难度1 9 / 定数1 10 / 物量1 11 / 难度2 12 / 定数2 13 / 物量2 14
-            //       难度3 15 / 定数3 16 / 物量3 17 / show+难度 18 / show+定数 19
+            // 列序：音乐ID 0 / 曲名 1 / 时长 2 / 码率 3 / 作者ID 4 / 作者 5 / 标签 6 / 价格 7 / 点赞 8 / 异常 9
+            //       难度1 10 / 定数1 11 / 物量1 12 / 难度2 13 / 定数2 14 / 物量2 15
+            //       难度3 16 / 定数3 17 / 物量3 18 / show+难度 19 / show+定数 20
             Row row = sheet.getRow(1);
             assertEquals(6482, number(row, 0), 1e-9);
             assertEquals("自制曲", text(row, 1));
-            assertEquals(7, number(row, 3), 1e-9);
-            assertEquals("作者", text(row, 4));
-            assertEquals("流行 / 电音", text(row, 5));
-            assertEquals(100, number(row, 6), 1e-9);
-            assertEquals(42, number(row, 7), 1e-9);
-            assertEquals("⚠️", text(row, 8));
-            assertEquals("[初]基础(10)", text(row, 9));
-            assertEquals("[中]进阶(11)", text(row, 12));
-            assertEquals("[高]专家(12)", text(row, 15));
-            assertEquals("[S+]传奇(15)", text(row, 18));
-            assertEquals(15, number(row, 19), 1e-9);
+            assertEquals("2:08", text(row, 2));
+            assertEquals(142, number(row, 3), 1e-9);
+            assertEquals(7, number(row, 4), 1e-9);
+            assertEquals("作者", text(row, 5));
+            assertEquals("流行 / 电音", text(row, 6));
+            assertEquals(100, number(row, 7), 1e-9);
+            assertEquals(42, number(row, 8), 1e-9);
+            assertEquals("⚠️", text(row, 9));
+            assertEquals("[初]基础(10)", text(row, 10));
+            assertEquals("[中]进阶(11)", text(row, 13));
+            assertEquals("[高]专家(12)", text(row, 16));
+            assertEquals("[S+]传奇(15)", text(row, 19));
+            assertEquals(15, number(row, 20), 1e-9);
 
             // 空商品：价格/点赞/标签订位都是空文本，三组难度补齐为空
             Row emptyRow = sheet.getRow(2);
             assertEquals("空商品", text(emptyRow, 1));
-            assertEquals(CellType.STRING, emptyRow.getCell(4).getCellType());
-            assertEquals("", text(emptyRow, 4));
+            assertEquals("", text(emptyRow, 2), "没有音频记录时时长留空");
+            assertEquals("", text(emptyRow, 3), "没有音频记录时码率留空");
+            assertEquals(CellType.STRING, emptyRow.getCell(5).getCellType());
             assertEquals("", text(emptyRow, 5));
             assertEquals("", text(emptyRow, 6));
-            assertEquals("", text(emptyRow, 8));
-            assertEquals("", text(emptyRow, 17));
+            assertEquals("", text(emptyRow, 7));
+            assertEquals("", text(emptyRow, 9));
+            assertEquals("", text(emptyRow, 18));
         }
     }
 

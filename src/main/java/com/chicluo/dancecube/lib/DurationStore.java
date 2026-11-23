@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 曲目音频信息（时长 / 码率），对标 Python 版 {@code core/music.py} 的
@@ -37,8 +38,9 @@ public final class DurationStore {
     private static final Object WRITE_LOCK = new Object();
 
     private DurationStore(Map<Long, Double> durations, Map<Long, Long> sizes, Path dataDir) {
-        this.durations = new HashMap<>(durations);
-        this.sizes = Map.copyOf(sizes);
+        // 全量拉取的后台线程会写、导出/查询线程会读，用并发 Map 避免读写竞争
+        this.durations = new ConcurrentHashMap<>(durations);
+        this.sizes = new ConcurrentHashMap<>(sizes);
         this.dataDir = dataDir;
     }
 
@@ -81,16 +83,51 @@ public final class DurationStore {
      */
     public synchronized Integer probeAndCache(long musicId, String audioUrl) {
         Integer known = duration(musicId);
-        if (known != null) {
+        if (known != null && kbps(musicId) != null) {
             return known;
         }
-        Double seconds = AudioProbe.probe(audioUrl);
-        if (seconds == null || seconds <= 0) {
-            return null;
+        // 有时长缺码率（体积没记录）也要再探一次，否则全量拉取永远补不上那一列
+        AudioProbe.Result result = AudioProbe.probeFull(audioUrl);
+        if (result == null || result.seconds() <= 0) {
+            return known;
         }
-        durations.put(musicId, seconds);
-        writeUserDuration(musicId, seconds);
-        return (int) Math.max(1, Math.rint(seconds));
+        durations.put(musicId, result.seconds());
+        if (result.bytes() > 0) {
+            sizes.put(musicId, result.bytes());
+        }
+        writeUserDuration(musicId, result.seconds());
+        if (result.bytes() > 0) {
+            writeUserBitrate(musicId, result.bytes());
+        }
+        return (int) Math.max(1, Math.rint(result.seconds()));
+    }
+
+    /** 把新探测到的音频体积合并进 music_bitrate.json（读-改-写，加锁 + 临时文件替换）。 */
+    private void writeUserBitrate(long musicId, long bytes) {
+        if (dataDir == null) {
+            return;
+        }
+        Path file = resolve(dataDir, "music_bitrate.json");
+        if (file == null) {
+            file = dataDir.resolve("music_bitrate.json");
+        }
+        synchronized (WRITE_LOCK) {
+            try {
+                com.fasterxml.jackson.databind.node.ObjectNode root = MAPPER.createObjectNode();
+                if (Files.isRegularFile(file)) {
+                    JsonNode existing = MAPPER.readTree(file.toFile());
+                    if (existing != null && existing.isObject()) {
+                        root = (com.fasterxml.jackson.databind.node.ObjectNode) existing;
+                    }
+                }
+                root.put(String.valueOf(musicId), bytes);
+                Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                MAPPER.writerWithDefaultPrettyPrinter().writeValue(tmp.toFile(), root);
+                Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                LOG.log(System.Logger.Level.WARNING, "写回码率缓存失败：" + e);
+            }
+        }
     }
 
     /** 把新探测到的时长合并进 music_duration_user.json（读-改-写，加锁 + 临时文件替换）。 */

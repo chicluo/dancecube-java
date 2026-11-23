@@ -32,15 +32,15 @@ public final class CatalogExporter {
     public static final List<String> OFFICIAL_HEADERS = List.of(
             "音乐ID", "曲名", "曲风", "时长", "难度", "定数", "物量");
 
-    /** 自制谱全表表头，顺序与 Python 版一致（含「时长」）。 */
+    /** 自制谱全表表头，顺序与 Python 版一致（含「时长」「码率」）。 */
     public static final List<String> USER_HEADERS = List.of(
-            "音乐ID", "曲名", "时长", "作者ID", "作者", "标签", "价格(金币)", "点赞", "异常",
+            "音乐ID", "曲名", "时长", "码率", "作者ID", "作者", "标签", "价格(金币)", "点赞", "异常",
             "难度1", "定数1", "物量1", "难度2", "定数2", "物量2", "难度3", "定数3", "物量3",
             "show+难度", "show+定数");
 
     private static final Set<String> OFFICIAL_NUMERIC = Set.of("音乐ID", "定数", "物量");
     private static final Set<String> USER_NUMERIC = Set.of(
-            "音乐ID", "作者ID", "价格(金币)", "点赞",
+            "音乐ID", "码率", "作者ID", "价格(金币)", "点赞",
             "定数1", "物量1", "定数2", "物量2", "定数3", "物量3", "show+定数");
 
     /** 曲风：MusicCategoryNew 1 国语 / 3 韩文 / 4 欧美 / 6 其他，未知也归「其他」。 */
@@ -150,6 +150,8 @@ public final class CatalogExporter {
                 values.add(ExcelSupport.safeCell(song.name() == null ? "" : song.name()));
                 Integer dur = durations == null ? null : durations.duration(song.musicId());
                 values.add(dur == null || dur <= 0 ? "" : ScoreExporter.mmss(dur));
+                Integer kbps = durations == null ? null : durations.kbps(song.musicId());
+                values.add(kbps == null || kbps <= 0 ? "" : kbps);
                 values.add(song.ownerId() == null || song.ownerId() == 0L ? "" : song.ownerId());
                 values.add(ExcelSupport.safeCell(song.ownerName() == null ? "" : song.ownerName()));
                 values.add(ExcelSupport.safeCell(String.join(" / ",
