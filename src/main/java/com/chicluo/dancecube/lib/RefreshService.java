@@ -22,10 +22,17 @@ public class RefreshService {
 
     private final MusicLibrary library;
     private final TokenStore tokens;
+    /** 最近一次失败的原因，供调用方打日志（refreshXxx 只返回 boolean，原因会被吞掉）。 */
+    private volatile String lastError = "";
 
     public RefreshService(MusicLibrary library, TokenStore tokens) {
         this.library = library;
         this.tokens = tokens;
+    }
+
+    /** 最近一次刷新失败的原因；成功时清空。 */
+    public String lastError() {
+        return lastError;
     }
 
     /** 官方接口请求：轮换 token。 */
@@ -59,17 +66,21 @@ public class RefreshService {
         try {
             body = fetch("/Dance/MusicData/GetValidMusicList", null);
         } catch (IOException e) {
+            lastError = "官谱拉取：" + e.getMessage();
             return false;
         }
         if (body == null || !body.isArray() || body.size() < 500) {
+            lastError = "官谱数据残缺（" + (body == null ? "null" : body.size() + " 条") + "），不覆盖缓存";
             return false; // 残缺数据不覆盖好缓存
         }
         try {
             writeAtomic(library.officialPath(), body);
         } catch (IOException e) {
+            lastError = "官谱写盘失败：" + e;
             return false;
         }
         library.invalidate();
+        lastError = "";
         return true;
     }
 
@@ -92,17 +103,21 @@ public class RefreshService {
                 }
             }
         } catch (IOException e) {
+            lastError = "自制谱拉取：" + e.getMessage();
             return false;
         }
         if (all.isEmpty()) {
+            lastError = "自制谱数据为空，不覆盖缓存";
             return false;
         }
         try {
             writeAtomic(library.userPath(), all);
         } catch (IOException e) {
+            lastError = "自制谱写盘失败：" + e;
             return false;
         }
         library.invalidate();
+        lastError = "";
         return true;
     }
 
