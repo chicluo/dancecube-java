@@ -31,6 +31,7 @@ public class DanceCube {
     private final TokenStore tokens;
     private final com.chicluo.dancecube.lib.PushStore push;
     private final DurationStore durations;
+    private com.chicluo.dancecube.lib.AudioBackfill backfill;
 
     public DanceCube(Path dataDir) {
         this.library = new MusicLibrary(dataDir);
@@ -51,6 +52,16 @@ public class DanceCube {
     /** 音频时长/码率数据（读自数据目录下的 music_duration*.json / music_bitrate.json）。 */
     public DurationStore durationStore() {
         return durations;
+    }
+
+    /**
+     * 曲库音频全量补全（懒加载，同一实例复用，保证「同一时间只有一个批量任务」的判断有效）。
+     */
+    public synchronized com.chicluo.dancecube.lib.AudioBackfill audioBackfill() {
+        if (backfill == null) {
+            backfill = new com.chicluo.dancecube.lib.AudioBackfill(library, durations);
+        }
+        return backfill;
     }
 
     public com.chicluo.dancecube.lib.PushStore pushStore() {
